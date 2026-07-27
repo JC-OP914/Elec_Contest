@@ -1,0 +1,4 @@
+*.kmodel
+det_results/
+test.jpg
+README.pdf
