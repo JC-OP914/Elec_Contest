@@ -9,11 +9,11 @@ import os
 import argparse
 
 # 参数配置
-INPUT_PATH = './data/'
-IMAGE_FILE = 'img_raw'
+INPUT_PATH = '/run/user/1000/gvfs/gphoto2:host=Kendryte_CanMV_001000000/store_ffff0002/Photos/'
+IMAGE_FILE = 'calib_1280x720'
 CAMERA_TYPE = 'normal'
-FRAME_WIDTH = 320
-FRAME_HEIGHT = 240
+FRAME_WIDTH = 1280
+FRAME_HEIGHT = 720
 BORAD_WIDTH = 9   # 内角点宽度
 BORAD_HEIGHT = 6  # 内角点高度
 SQUARE_SIZE = 11  # 方格边长(mm)
