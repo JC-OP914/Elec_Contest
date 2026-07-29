@@ -2,7 +2,8 @@
 """
 主入口
 =====
-摄像头 + 显示 + 深度学习识别 + WiFi 图传。
+摄像头 + 显示 + 深度学习识别。
+运行环境: Canaan K230 (CanMV v1.5)
 """
 
 import time, gc, sys
@@ -14,15 +15,12 @@ for p in ["/sdcard/Elec_Contest", "/sdcard"]:
 from machine import Pin
 from libs.PipeLine import PipeLine
 from detector import Detector
-from streamer import MJPEGStreamer
 
 # ==================== 配置 ====================
 DISPLAY_MODE = "jd9852"
 RGB888P_SIZE = [1280, 720]
 ROOT_PATH = "/sdcard/mp_deployment_source"
 CONFIG_PATH = ROOT_PATH + "/deploy_config.json"
-WIFI_SSID = "B4-401"
-WIFI_PASS = "ROBOT-B4-401"
 
 # ==================== 初始化 ====================
 
@@ -42,15 +40,6 @@ print("[init] Loading detector...")
 detector = Detector(CONFIG_PATH, RGB888P_SIZE, display_size)
 detector.init()
 print("[init] Detector ready, labels:", detector.labels)
-
-print("[init] Starting streamer...")
-streamer = MJPEGStreamer(pipeline.sensor, WIFI_SSID, WIFI_PASS, 80)
-streamer.setup_sensor_channel()
-ip = streamer.connect_wifi()
-if ip:
-    streamer.start_server()
-else:
-    print("[init] WARNING: No WiFi")
 
 print("[init] Entering main loop\n")
 
@@ -89,12 +78,6 @@ try:
             5, 22, 14, "fps:%d" % fps, color=(0, 255, 0))
 
         pipeline.show_image()
-
-        if ip and streamer.accept_client():
-            jpeg = streamer.get_jpeg()
-            if jpeg:
-                streamer.send_frame(jpeg)
-
         gc.collect()
 
 except KeyboardInterrupt:
@@ -106,5 +89,4 @@ finally:
     print("[main] Cleaning up...")
     detector.deinit()
     pipeline.destroy()
-    streamer.close()
     print("[main] Done")
