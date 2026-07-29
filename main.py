@@ -16,6 +16,7 @@ from machine import Pin
 from libs.PipeLine import PipeLine
 from detector import Detector
 from pnp_estimator import PnPEstimator
+from kalman_filter import KalmanBoxFilter
 
 # ==================== 配置 ====================
 DISPLAY_MODE = "jd9852"
@@ -55,6 +56,10 @@ print("[init] Loading PnP estimator...")
 pnp = PnPEstimator(IMAGE_SHAPE, CAMERA_MATRIX, DIST_COEFFS, ball_diameter_cm=1.0)
 print("[init] PnP ready")
 
+print("[init] Init Kalman filter...")
+kf = KalmanBoxFilter()
+print("[init] Kalman ready")
+
 print("[init] Entering main loop\n")
 
 # ==================== 主循环 ====================
@@ -63,12 +68,16 @@ frame_count = 0
 fps = 0
 stable_count = 0
 stable_frames = 0
+lost_frames = 0          # 连续丢帧计数
+MAX_LOST = 10            # 连续丢超过此帧数才重置卡尔曼
+GREEN = (0, 255, 0)
+YELLOW = (255, 255, 0)
 
 try:
     while True:
         img = pipeline.get_frame()
+        pipeline.osd_img.clear()
         res = detector.infer(img)
-        detector.draw(pipeline.osd_img, res)
 
         raw_count = len(res["boxes"])
         if raw_count == stable_count:
@@ -76,14 +85,38 @@ try:
         else:
             stable_count = raw_count
             stable_frames = 0
-        show_count = stable_count if stable_frames < 3 else raw_count
+        show_count = 1 if stable_count > 0 else 0
 
-        # PnP 位置估计
+        # ---- 卡尔曼滤波 ----
+        kf.predict()
         ball_pos = None
-        if raw_count > 0 and pipeline.cur_frame:
+        kf_box = None
+
+        if raw_count > 0:
+            lost_frames = 0
             raw = res["boxes"][0]  # [x1, y1, x2, y2]
-            box = [raw[0], raw[1], raw[2] - raw[0], raw[3] - raw[1]]
-            ball_pos = pnp.estimate(img, box)
+            box_raw = [raw[0], raw[1], raw[2] - raw[0], raw[3] - raw[1]]
+            kf.update(box_raw)
+        else:
+            lost_frames += 1
+            if lost_frames > MAX_LOST:
+                kf.reset()
+
+        if kf._init:
+            kf_box = kf.get_box()
+            bx, by, bw, bh = kf_box
+            # 绿色检测框
+            pipeline.osd_img.draw_rectangle(
+                bx, by, bw, bh, color=GREEN, thickness=2)
+            # 中心十字 (用小矩形拼，K230 上绝对可靠)
+            cx = bx + bw // 2
+            cy = by + bh // 2
+            R = 5
+            pipeline.osd_img.draw_rectangle(cx - R, cy - 1, R * 2, 3, color=GREEN, thickness=-1)
+            pipeline.osd_img.draw_rectangle(cx - 1, cy - R, 3, R * 2, color=GREEN, thickness=-1)
+            # PnP 用平滑后的框
+            if pipeline.cur_frame:
+                ball_pos = pnp.estimate(img, kf_box)
 
         frame_count += 1
         now = time.ticks_ms()
