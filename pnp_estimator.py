@@ -52,16 +52,11 @@ class PnPEstimator:
                 return None
 
         try:
-            print("[pnp] calling: shape=%s roi=[%d,%d,%d,%d] ball=%.1f" %
-                  (self.image_shape, x, y, w, h, self.ball_w))
-
             dist = cv_lite.rgb888_pnp_distance(
                 self.image_shape, img_np, [x, y, w, h],
                 self.camera_matrix, self.dist_coeffs, self.dist_len,
                 self.ball_w, self.ball_h
             )
-            print("[pnp] dist=%.2f" % (dist if dist else -1))
-
             if dist is None or dist <= 0:
                 return None
 

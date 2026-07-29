@@ -81,8 +81,8 @@ try:
         # PnP 位置估计
         ball_pos = None
         if raw_count > 0 and pipeline.cur_frame:
-            box = res["boxes"][0]  # 取第一个钢球
-            print("[main] raw box:", box)
+            raw = res["boxes"][0]  # [x1, y1, x2, y2]
+            box = [raw[0], raw[1], raw[2] - raw[0], raw[3] - raw[1]]
             ball_pos = pnp.estimate(img, box)
 
         frame_count += 1
@@ -92,6 +92,9 @@ try:
             fps = frame_count * 1000 // elapsed
             frame_count = 0
             last_time = now
+            # 每秒打印一次 PnP
+            if ball_pos:
+                print("[PnP] x=%.2f cm  z=%.2f cm  fps=%d" % (ball_pos[0], ball_pos[1], fps))
 
         pipeline.osd_img.draw_string_advanced(
             5, 5, 14, "count:%d" % show_count, color=(0, 255, 0))
@@ -99,7 +102,6 @@ try:
             5, 22, 14, "fps:%d" % fps, color=(0, 255, 0))
         if ball_pos:
             x_cm, z_cm = ball_pos
-            print("[PnP] x=%.2f cm  z=%.2f cm" % (x_cm, z_cm))
             pipeline.osd_img.draw_string_advanced(
                 5, 39, 14, "pos:%.1f cm" % x_cm, color=(255, 255, 0))
             pipeline.osd_img.draw_string_advanced(
