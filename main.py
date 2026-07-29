@@ -97,6 +97,17 @@ try:
             raw = res["boxes"][0]  # [x1, y1, x2, y2]
             box_raw = [raw[0], raw[1], raw[2] - raw[0], raw[3] - raw[1]]
             kf.update(box_raw)
+            # 红色十字 (模型原始检测)
+            det_cx = box_raw[0] + box_raw[2] // 2
+            det_cy = box_raw[1] + box_raw[3] // 2
+            pipeline.osd_img.draw_string_advanced(
+                det_cx - 4, det_cy - 7, 14, "+", color=(255, 0, 0))
+            # 模型检测: 只画红色十字 (无框)
+            rcx = box_raw[0] + box_raw[2] // 2
+            rcy = box_raw[1] + box_raw[3] // 2
+            r = 4
+            pipeline.osd_img.draw_rectangle(rcx - r, rcy - 1, r * 2, 2, color=(255, 0, 0), thickness=-1)
+            pipeline.osd_img.draw_rectangle(rcx - 1, rcy - r, 2, r * 2, color=(255, 0, 0), thickness=-1)
         else:
             lost_frames += 1
             if lost_frames > MAX_LOST:
@@ -108,12 +119,9 @@ try:
             # 绿色检测框
             pipeline.osd_img.draw_rectangle(
                 bx, by, bw, bh, color=GREEN, thickness=2)
-            # 中心十字 (用小矩形拼，K230 上绝对可靠)
-            cx = bx + bw // 2
-            cy = by + bh // 2
-            R = 5
-            pipeline.osd_img.draw_rectangle(cx - R, cy - 1, R * 2, 3, color=GREEN, thickness=-1)
-            pipeline.osd_img.draw_rectangle(cx - 1, cy - R, 3, R * 2, color=GREEN, thickness=-1)
+            # 绿色十字 (滤波后)
+            pipeline.osd_img.draw_string_advanced(
+                bx + bw // 2 - 4, by + bh // 2 - 7, 14, "+", color=GREEN)
             # PnP 用平滑后的框
             if pipeline.cur_frame:
                 ball_pos = pnp.estimate(img, kf_box)
