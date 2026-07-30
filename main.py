@@ -17,6 +17,7 @@ from libs.PipeLine import PipeLine
 from detector import Detector
 from pnp_estimator import PnPEstimator
 from kalman_filter import KalmanBoxFilter
+from uart_comm import UartComm
 
 # ==================== 配置 ====================
 DISPLAY_MODE = "jd9852"
@@ -60,6 +61,11 @@ print("[init] Init Kalman filter...")
 kf = KalmanBoxFilter()
 print("[init] Kalman ready")
 
+print("[init] Init UART...")
+uart = UartComm(uart_id=3, baudrate=115200,
+                tx_pin=50, rx_pin=51, send_interval_ms=50)
+print("[init] UART ready")
+
 print("[init] Entering main loop\n")
 
 # ==================== 主循环 ====================
@@ -77,6 +83,12 @@ try:
     while True:
         img = pipeline.get_frame()
         pipeline.osd_img.clear()
+
+        # ---- 中心虚线 (光心 cx=153) ----
+        for dy in range(0, 240, 16):
+            pipeline.osd_img.draw_rectangle(
+                152, dy, 3, 10, color=(0, 0, 255), thickness=-1)
+
         res = detector.infer(img)
 
         raw_count = len(res["boxes"])
@@ -125,6 +137,9 @@ try:
             # PnP 用平滑后的框
             if pipeline.cur_frame:
                 ball_pos = pnp.estimate(img, kf_box)
+                # 发送 PnP 结果给电控 (内部有间隔控制)
+                if ball_pos:
+                    uart.send(ball_pos[0])
 
         frame_count += 1
         now = time.ticks_ms()
@@ -158,6 +173,7 @@ except Exception as e:
     sys.print_exception(e)
 finally:
     print("[main] Cleaning up...")
+    uart.deinit()
     detector.deinit()
     pipeline.destroy()
     print("[main] Done")
