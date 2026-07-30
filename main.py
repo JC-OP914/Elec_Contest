@@ -21,18 +21,18 @@ from uart_comm import UartComm
 
 # ==================== 配置 ====================
 DISPLAY_MODE = "jd9852"
-RGB888P_SIZE = [320, 240]
+RGB888P_SIZE = [1280, 720]
 ROOT_PATH = "/sdcard/mp_deployment_source"
 CONFIG_PATH = ROOT_PATH + "/deploy_config.json"
 
-# ==================== 相机标定 (320x240) ====================
+# ==================== 相机标定 (1280x720) ====================
 CAMERA_MATRIX = [
-    266.84674701, 0.0, 153.32619885,
-    0.0, 354.32625064, 132.28519892,
+    1067.38698804, 0.0, 613.30479540,
+    0.0, 1062.97875192, 396.85559676,
     0.0, 0.0, 1.0
 ]
 DIST_COEFFS = [0.05526456, -0.4621188, 0.00494004, -0.00092707, 0.09250291]
-IMAGE_SHAPE = [RGB888P_SIZE[1], RGB888P_SIZE[0]]  # [240, 320]
+IMAGE_SHAPE = [RGB888P_SIZE[1], RGB888P_SIZE[0]]  # [720, 1280]
 
 # ==================== 初始化 ====================
 
@@ -47,6 +47,10 @@ pipeline = PipeLine(rgb888p_size=RGB888P_SIZE, display_mode=DISPLAY_MODE)
 pipeline.create(to_ide=False)
 display_size = pipeline.get_display_size()
 print("[init] Pipeline ready, display:", display_size)
+# sensor → display 坐标缩放
+SX = display_size[0] / RGB888P_SIZE[0]
+SY = display_size[1] / RGB888P_SIZE[1]
+print("[init] Coord scale: SX=%.3f SY=%.3f" % (SX, SY))
 
 print("[init] Loading detector...")
 detector = Detector(CONFIG_PATH, RGB888P_SIZE, display_size)
@@ -84,11 +88,6 @@ try:
         img = pipeline.get_frame()
         pipeline.osd_img.clear()
 
-        # ---- 中心虚线 (光心 cx=153) ----
-        for dy in range(0, 240, 16):
-            pipeline.osd_img.draw_rectangle(
-                152, dy, 3, 10, color=(0, 0, 255), thickness=-1)
-
         res = detector.infer(img)
 
         raw_count = len(res["boxes"])
@@ -106,35 +105,40 @@ try:
 
         if raw_count > 0:
             lost_frames = 0
-            raw = res["boxes"][0]  # [x1, y1, x2, y2]
+            raw = res["boxes"][0]  # [x1, y1, x2, y2] sensor space
             box_raw = [raw[0], raw[1], raw[2] - raw[0], raw[3] - raw[1]]
             kf.update(box_raw)
-            # 红色十字 (模型原始检测)
-            det_cx = box_raw[0] + box_raw[2] // 2
-            det_cy = box_raw[1] + box_raw[3] // 2
+            # 红色十字 (模型原始检测) — 缩放到 display 坐标
+            det_cx_s = box_raw[0] + box_raw[2] // 2
+            det_cy_s = box_raw[1] + box_raw[3] // 2
+            det_cx = int(det_cx_s * SX)
+            det_cy = int(det_cy_s * SY)
             pipeline.osd_img.draw_string_advanced(
                 det_cx - 4, det_cy - 7, 14, "+", color=(255, 0, 0))
-            # 模型检测: 只画红色十字 (无框)
-            rcx = box_raw[0] + box_raw[2] // 2
-            rcy = box_raw[1] + box_raw[3] // 2
+            # 红色十字 (无框)
             r = 4
-            pipeline.osd_img.draw_rectangle(rcx - r, rcy - 1, r * 2, 2, color=(255, 0, 0), thickness=-1)
-            pipeline.osd_img.draw_rectangle(rcx - 1, rcy - r, 2, r * 2, color=(255, 0, 0), thickness=-1)
+            pipeline.osd_img.draw_rectangle(det_cx - r, det_cy - 1, r * 2, 2, color=(255, 0, 0), thickness=-1)
+            pipeline.osd_img.draw_rectangle(det_cx - 1, det_cy - r, 2, r * 2, color=(255, 0, 0), thickness=-1)
         else:
             lost_frames += 1
             if lost_frames > MAX_LOST:
                 kf.reset()
 
         if kf._init:
-            kf_box = kf.get_box()
-            bx, by, bw, bh = kf_box
+            kf_box = kf.get_box()  # sensor space [x, y, w, h]
+            bx_s, by_s, bw_s, bh_s = kf_box
+            # 缩放到 display 坐标
+            bx = int(bx_s * SX)
+            by = int(by_s * SY)
+            bw = int(bw_s * SX)
+            bh = int(bh_s * SY)
             # 绿色检测框
             pipeline.osd_img.draw_rectangle(
                 bx, by, bw, bh, color=GREEN, thickness=2)
             # 绿色十字 (滤波后)
             pipeline.osd_img.draw_string_advanced(
                 bx + bw // 2 - 4, by + bh // 2 - 7, 14, "+", color=GREEN)
-            # PnP 用平滑后的框
+            # PnP 用平滑后的框 (sensor space)
             if pipeline.cur_frame:
                 ball_pos = pnp.estimate(img, kf_box)
                 # 发送 PnP 结果给电控 (内部有间隔控制)
@@ -162,6 +166,12 @@ try:
                 5, 39, 14, "pos:%.1f cm" % x_cm, color=(255, 255, 0))
             pipeline.osd_img.draw_string_advanced(
                 5, 56, 14, "dist:%.1f cm" % z_cm, color=(255, 255, 0))
+
+        # ---- 中心虚线 (光心 cx≈613) ----
+        cx_disp = int(613 * display_size[0] / 1280)
+        for dy in range(0, display_size[1], 16):
+            pipeline.osd_img.draw_string_advanced(
+                cx_disp - 1, dy, 12, "|", color=(0, 0, 255))
 
         pipeline.show_image()
         gc.collect()
