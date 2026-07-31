@@ -47,7 +47,6 @@ pipeline = PipeLine(rgb888p_size=RGB888P_SIZE, display_mode=DISPLAY_MODE)
 pipeline.create(to_ide=False)
 display_size = pipeline.get_display_size()
 print("[init] Pipeline ready, display:", display_size)
-# sensor → display 坐标缩放
 SX = display_size[0] / RGB888P_SIZE[0]
 SY = display_size[1] / RGB888P_SIZE[1]
 print("[init] Coord scale: SX=%.3f SY=%.3f" % (SX, SY))
@@ -76,12 +75,12 @@ print("[init] Entering main loop\n")
 last_time = time.ticks_ms()
 frame_count = 0
 fps = 0
-stable_count = 0
-stable_frames = 0
-lost_frames = 0          # 连续丢帧计数
-MAX_LOST = 10            # 连续丢超过此帧数才重置卡尔曼
+RED = (255, 0, 0)
 GREEN = (0, 255, 0)
-YELLOW = (255, 255, 0)
+last_raw_box = None     # hold last raw detection box
+lost_frames = 0
+last_score = 0.0
+MAX_LOST = 15
 
 try:
     while True:
@@ -90,61 +89,67 @@ try:
 
         res = detector.infer(img)
 
-        raw_count = len(res["boxes"])
-        if raw_count == stable_count:
-            stable_frames += 1
-        else:
-            stable_count = raw_count
-            stable_frames = 0
-        show_count = 1 if stable_count > 0 else 0
+        boxes = res.get("boxes", [])
+        raw_count = len(boxes)
 
-        # ---- 卡尔曼滤波 ----
+        # ---- Kalman ----
         kf.predict()
         ball_pos = None
         kf_box = None
+        raw_show = False
 
         if raw_count > 0:
+            box = boxes[0]
+            box_raw = [box[0], box[1], box[2] - box[0], box[3] - box[1]]
+            last_raw_box = box
             lost_frames = 0
-            raw = res["boxes"][0]  # [x1, y1, x2, y2] sensor space
-            box_raw = [raw[0], raw[1], raw[2] - raw[0], raw[3] - raw[1]]
+            last_score = res["scores"][0] if len(res["scores"]) > 0 else 0.0
             kf.update(box_raw)
-            # 红色十字 (模型原始检测) — 缩放到 display 坐标
-            det_cx_s = box_raw[0] + box_raw[2] // 2
-            det_cy_s = box_raw[1] + box_raw[3] // 2
-            det_cx = int(det_cx_s * SX)
-            det_cy = int(det_cy_s * SY)
-            pipeline.osd_img.draw_string_advanced(
-                det_cx - 4, det_cy - 7, 14, "+", color=(255, 0, 0))
-            # 红色十字 (无框)
-            r = 4
-            pipeline.osd_img.draw_rectangle(det_cx - r, det_cy - 1, r * 2, 2, color=(255, 0, 0), thickness=-1)
-            pipeline.osd_img.draw_rectangle(det_cx - 1, det_cy - r, 2, r * 2, color=(255, 0, 0), thickness=-1)
         else:
             lost_frames += 1
             if lost_frames > MAX_LOST:
                 kf.reset()
 
+        raw_show = (last_raw_box is not None and lost_frames <= MAX_LOST)
+
+        # ---- draw raw detection: red box + red cross (held) ----
+        if raw_show:
+            lb = last_raw_box
+            x1 = int(lb[0] * SX)
+            y1 = int(lb[1] * SY)
+            x2 = int(lb[2] * SX)
+            y2 = int(lb[3] * SY)
+            pipeline.osd_img.draw_rectangle(
+                x1, y1, x2 - x1, y2 - y1, color=RED, thickness=2)
+            cx = (x1 + x2) // 2
+            cy = (y1 + y2) // 2
+            pipeline.osd_img.draw_string_advanced(
+                cx - 4, cy - 7, 14, "+", color=RED)
+            r = 5
+            pipeline.osd_img.draw_rectangle(
+                cx - r, cy - 1, r * 2, 2, color=RED, thickness=-1)
+            pipeline.osd_img.draw_rectangle(
+                cx - 1, cy - r, 2, r * 2, color=RED, thickness=-1)
+
+        # ---- draw kalman filtered: green box + green cross ----
         if kf._init:
-            kf_box = kf.get_box()  # sensor space [x, y, w, h]
+            kf_box = kf.get_box()
             bx_s, by_s, bw_s, bh_s = kf_box
-            # 缩放到 display 坐标
             bx = int(bx_s * SX)
             by = int(by_s * SY)
             bw = int(bw_s * SX)
             bh = int(bh_s * SY)
-            # 绿色检测框
             pipeline.osd_img.draw_rectangle(
                 bx, by, bw, bh, color=GREEN, thickness=2)
-            # 绿色十字 (滤波后)
             pipeline.osd_img.draw_string_advanced(
                 bx + bw // 2 - 4, by + bh // 2 - 7, 14, "+", color=GREEN)
-            # PnP 用平滑后的框 (sensor space)
+            # PnP from kalman box
             if pipeline.cur_frame:
                 ball_pos = pnp.estimate(img, kf_box)
-                # 发送 PnP 结果给电控 (内部有间隔控制)
                 if ball_pos:
                     uart.send(ball_pos[0])
 
+        # ---- FPS ----
         frame_count += 1
         now = time.ticks_ms()
         elapsed = time.ticks_diff(now, last_time)
@@ -152,10 +157,11 @@ try:
             fps = frame_count * 1000 // elapsed
             frame_count = 0
             last_time = now
-            # 每秒打印一次 PnP
             if ball_pos:
                 print("[PnP] x=%.2f cm  z=%.2f cm  fps=%d" % (ball_pos[0], ball_pos[1], fps))
 
+        # ---- left OSD ----
+        show_count = 1 if (raw_show or kf._init) else 0
         pipeline.osd_img.draw_string_advanced(
             5, 5, 14, "count:%d" % show_count, color=(0, 255, 0))
         pipeline.osd_img.draw_string_advanced(
@@ -163,11 +169,18 @@ try:
         if ball_pos:
             x_cm, z_cm = ball_pos
             pipeline.osd_img.draw_string_advanced(
-                5, 39, 14, "pos:%.1f cm" % x_cm, color=(255, 255, 0))
+                5, 39, 14, "x:%.1f cm" % x_cm, color=(255, 255, 0))
             pipeline.osd_img.draw_string_advanced(
                 5, 56, 14, "dist:%.1f cm" % z_cm, color=(255, 255, 0))
 
-        # ---- 中心虚线 (光心 cx≈613) ----
+        # ---- top-right: confidence ----
+        if raw_show:
+            conf_text = "conf:%.2f" % last_score
+            conf_x = display_size[0] - len(conf_text) * 9 - 10
+            pipeline.osd_img.draw_string_advanced(
+                conf_x, 5, 14, conf_text, color=(255, 255, 0))
+
+        # ---- center dashed line ----
         cx_disp = int(613 * display_size[0] / 1280)
         for dy in range(0, display_size[1], 16):
             pipeline.osd_img.draw_string_advanced(
