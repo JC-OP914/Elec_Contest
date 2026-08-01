@@ -25,6 +25,9 @@ RGB888P_SIZE = [1280, 720]
 ROOT_PATH = "/sdcard/mp_deployment_source"
 CONFIG_PATH = ROOT_PATH + "/deploy_config.json"
 
+X_OFFSET_CM = 0.8      # zero-point compensation (cm), + = shift right
+CX_OFFSET_PX = 4       # dashed line offset on display (px), + = right
+
 # ==================== 相机标定 (1280x720) ====================
 CAMERA_MATRIX = [
     1067.38698804, 0.0, 613.30479540,
@@ -57,7 +60,8 @@ detector.init()
 print("[init] Detector ready, labels:", detector.labels)
 
 print("[init] Loading PnP estimator...")
-pnp = PnPEstimator(IMAGE_SHAPE, CAMERA_MATRIX, DIST_COEFFS, ball_diameter_cm=1.0)
+pnp = PnPEstimator(IMAGE_SHAPE, CAMERA_MATRIX, DIST_COEFFS,
+                   ball_diameter_cm=1.0, x_offset_cm=X_OFFSET_CM)
 print("[init] PnP ready")
 
 print("[init] Init Kalman filter...")
@@ -181,7 +185,8 @@ try:
                 conf_x, 5, 14, conf_text, color=(255, 255, 0))
 
         # ---- center dashed line ----
-        cx_disp = int(613 * display_size[0] / 1280)
+        # dashed line at zero-point (fixed, camera won't move)
+        cx_disp = display_size[0] // 2 + CX_OFFSET_PX
         for dy in range(0, display_size[1], 16):
             pipeline.osd_img.draw_string_advanced(
                 cx_disp - 1, dy, 12, "|", color=(0, 0, 255))

@@ -12,12 +12,13 @@ import ulab.numpy as np
 
 class PnPEstimator:
     def __init__(self, image_shape, camera_matrix, dist_coeffs,
-                 ball_diameter_cm=1.0):
+                 ball_diameter_cm=1.0, x_offset_cm=0.0):
         """
         :param image_shape: [height, width] 图像尺寸
         :param camera_matrix: 3x3 内参矩阵，一维 list (9个元素)
         :param dist_coeffs: 畸变系数 list (5个元素)
         :param ball_diameter_cm: 钢球实际直径(cm)，默认 1.0
+        :param x_offset_cm: x方向零点补偿(cm)，正值=零点右移
         """
         self.image_shape = image_shape
         self.camera_matrix = camera_matrix
@@ -25,6 +26,7 @@ class PnPEstimator:
         self.dist_len = len(dist_coeffs)
         self.ball_w = ball_diameter_cm
         self.ball_h = ball_diameter_cm
+        self.x_offset_cm = x_offset_cm
 
         # 预取内参
         self.fx = camera_matrix[0]
@@ -62,7 +64,8 @@ class PnPEstimator:
 
             u = x + w / 2.0
             v = y + h / 2.0
-            x_cm = (u - self.cx) * dist / self.fx
+            # x=0 at image center, minus offset compensation
+            x_cm = (u - iw / 2.0) * dist / self.fx - self.x_offset_cm
             y_cm = (v - self.cy) * dist / self.fy
             return (x_cm, dist)
 
