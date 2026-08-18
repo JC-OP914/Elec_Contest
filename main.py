@@ -28,6 +28,11 @@ CONFIG_PATH = ROOT_PATH + "/deploy_config.json"
 X_OFFSET_CM = 0.8      # zero-point compensation (cm), + = shift right
 CX_OFFSET_PX = 4       # dashed line offset on display (px), + = right
 
+# ROI: full-width horizontal strip centered vertically
+ROI_HEIGHT = 100       # ROI height (px), tune based on pipe diameter ~3cm
+ROI = [0, (RGB888P_SIZE[1] - ROI_HEIGHT) // 2, RGB888P_SIZE[0], ROI_HEIGHT]
+# ROI = None           # uncomment to disable ROI, use full frame
+
 # ==================== 相机标定 (1280x720) ====================
 CAMERA_MATRIX = [
     1067.38698804, 0.0, 613.30479540,
@@ -55,9 +60,11 @@ SY = display_size[1] / RGB888P_SIZE[1]
 print("[init] Coord scale: SX=%.3f SY=%.3f" % (SX, SY))
 
 print("[init] Loading detector...")
-detector = Detector(CONFIG_PATH, RGB888P_SIZE, display_size)
+detector = Detector(CONFIG_PATH, RGB888P_SIZE, display_size, roi=ROI)
 detector.init()
 print("[init] Detector ready, labels:", detector.labels)
+if ROI:
+    print("[init] ROI:", ROI)
 
 print("[init] Loading PnP estimator...")
 pnp = PnPEstimator(IMAGE_SHAPE, CAMERA_MATRIX, DIST_COEFFS,
@@ -81,6 +88,7 @@ frame_count = 0
 fps = 0
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
 last_raw_box = None     # hold last raw detection box
 lost_frames = 0
 last_score = 0.0
@@ -90,6 +98,15 @@ try:
     while True:
         img = pipeline.get_frame()
         pipeline.osd_img.clear()
+
+        # ---- draw ROI border (blue) ----
+        if ROI:
+            rx_d = int(ROI[0] * SX)
+            ry_d = int(ROI[1] * SY)
+            rw_d = int(ROI[2] * SX)
+            rh_d = int(ROI[3] * SY)
+            pipeline.osd_img.draw_rectangle(
+                rx_d, ry_d, rw_d, rh_d, color=BLUE, thickness=2)
 
         res = detector.infer(img)
 

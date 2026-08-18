@@ -1,6 +1,6 @@
 {
     "python.analysis.stubPath": "/home/rm/.kendryte/k230_canmv_pylance/842f23d2382511fa/typings",
     "python.analysis.extraPaths": [
-        "/home/rm/.kendryte/k230_canmv_stubs/b440bb7ee700c2f2965d832dfd76b3fffb62aca0"
+        "/home/rm/.kendryte/k230_canmv_stubs/27996c67c74c0955f25d5440aa51c3cd0ef4dd0f"
     ]
 }

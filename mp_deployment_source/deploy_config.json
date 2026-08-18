@@ -50,6 +50,6 @@
         "steel_ball"
     ],
     "nms_option": false,
-    "kmodel_path": "best_AnchorBaseDet_can2_5_s_20260727141722.kmodel",
+    "kmodel_path": "best_AnchorBaseDet_can2_5_s_20260801133429.kmodel",
     "num_classes": 1
 }

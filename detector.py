@@ -11,13 +11,15 @@ from libs.Utils import read_json
 
 class Detector:
     def __init__(self, config_path: str, rgb888p_size: list, display_size: list,
-                 inference_mode: str = "video", debug_mode: int = 0):
+                 inference_mode: str = "video", debug_mode: int = 0,
+                 roi: list = None):
         """
         :param config_path: deploy_config.json 路径
         :param rgb888p_size: 视频帧尺寸 [w, h]
         :param display_size: 显示尺寸 [w, h] (由 Pipeline.get_display_size() 获取)
         :param inference_mode: 'video' 或 'image'
         :param debug_mode: 0=关闭, 1=开启
+        :param roi: 检测 ROI [x, y, w, h], None=全图
         """
         conf = read_json(config_path)
         root = config_path.rsplit("/", 1)[0]
@@ -40,6 +42,7 @@ class Detector:
         self.debug_mode = debug_mode
         self.rgb888p_size = rgb888p_size
         self.display_size = display_size
+        self.roi = roi
 
         self._app = None
 
@@ -66,7 +69,32 @@ class Detector:
         :param img: 输入图像 (来自 pipeline.get_frame())
         :return: {"boxes": [...], "classes": [...], ...}
         """
-        return self._app.run(img)
+        result = self._app.run(img)
+
+        # ROI 后过滤：只保留检测框中心在 ROI 内的结果
+        if self.roi is not None:
+            rx, ry, rw, rh = self.roi
+            boxes = result.get("boxes", [])
+            if boxes:
+                filtered_boxes = []
+                filtered_scores = []
+                filtered_classes = []
+                for i, box in enumerate(boxes):
+                    cx = (box[0] + box[2]) / 2.0
+                    cy = (box[1] + box[3]) / 2.0
+                    if rx <= cx <= rx + rw and ry <= cy <= ry + rh:
+                        filtered_boxes.append(box)
+                        if "scores" in result and i < len(result["scores"]):
+                            filtered_scores.append(result["scores"][i])
+                        if "classes" in result and i < len(result["classes"]):
+                            filtered_classes.append(result["classes"][i])
+                result["boxes"] = filtered_boxes
+                if "scores" in result:
+                    result["scores"] = filtered_scores
+                if "classes" in result:
+                    result["classes"] = filtered_classes
+
+        return result
 
     def draw(self, osd_img, result: dict):
         """在 OSD 图像上绘制检测结果"""
